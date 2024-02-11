@@ -2,7 +2,7 @@
 # docker build --no-cache -t  flowise .
 
 # Run image
-# docker run -d -p 3000:3000 flowise
+# docker run -d -p 2086:2086 flowise
 
 FROM node:18-alpine
 RUN apk add --update libc6-compat python3 make g++
@@ -36,6 +36,6 @@ COPY . .
 
 RUN yarn build
 
-EXPOSE 3000
+EXPOSE 2086
 
 CMD [ "yarn", "start" ]

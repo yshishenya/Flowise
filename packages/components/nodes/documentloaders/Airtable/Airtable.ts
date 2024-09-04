@@ -4,7 +4,8 @@ import { Document } from '@langchain/core/documents'
 import { TextSplitter } from 'langchain/text_splitter'
 import { BaseDocumentLoader } from 'langchain/document_loaders/base'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
-import { IDocument, ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { IDocument, ICommonObject, INode, INodeData, INodeParams, INodeOutputsValue } from '../../../src/Interface'
+import { handleEscapeCharacters } from '../../../src'
 
 class Airtable_DocumentLoaders implements INode {
     label: string
@@ -17,11 +18,12 @@ class Airtable_DocumentLoaders implements INode {
     baseClasses: string[]
     credential: INodeParams
     inputs?: INodeParams[]
+    outputs: INodeOutputsValue[]
 
     constructor() {
         this.label = 'Airtable'
         this.name = 'airtable'
-        this.version = 3.0
+        this.version = 3.02
         this.type = 'Document'
         this.icon = 'airtable.svg'
         this.category = 'Document Loaders'
@@ -107,10 +109,34 @@ class Airtable_DocumentLoaders implements INode {
                 type: 'string',
                 rows: 4,
                 description:
-                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma',
+                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma. Use * to omit all metadata keys execept the ones you specify in the Additional Metadata field',
                 placeholder: 'key1, key2, key3.nestedKey1',
                 optional: true,
                 additionalParams: true
+            },
+            {
+                label: 'Filter By Formula',
+                name: 'filterByFormula',
+                type: 'string',
+                placeholder: 'NOT({Id} = "")',
+                optional: true,
+                additionalParams: true,
+                description:
+                    'A formula used to filter records. The formula will be evaluated for each record, and if the result is not 0, false, "", NaN, [], or #Error! the record will be included in the response.'
+            }
+        ]
+        this.outputs = [
+            {
+                label: 'Document',
+                name: 'document',
+                description: 'Array of document objects containing metadata and pageContent',
+                baseClasses: [...this.baseClasses, 'json']
+            },
+            {
+                label: 'Text',
+                name: 'text',
+                description: 'Concatenated string from pageContent of documents',
+                baseClasses: ['string', 'json']
             }
         ]
     }
@@ -125,6 +151,7 @@ class Airtable_DocumentLoaders implements INode {
         const textSplitter = nodeData.inputs?.textSplitter as TextSplitter
         const metadata = nodeData.inputs?.metadata
         const _omitMetadataKeys = nodeData.inputs?.omitMetadataKeys as string
+        const filterByFormula = nodeData.inputs?.filterByFormula as string
 
         let omitMetadataKeys: string[] = []
         if (_omitMetadataKeys) {
@@ -141,7 +168,8 @@ class Airtable_DocumentLoaders implements INode {
             fields,
             returnAll,
             accessToken,
-            limit: limit ? parseInt(limit, 10) : 100
+            limit: limit ? parseInt(limit, 10) : 100,
+            filterByFormula
         }
 
         const loader = new AirtableLoader(airtableOptions)
@@ -153,7 +181,8 @@ class Airtable_DocumentLoaders implements INode {
         let docs: IDocument[] = []
 
         if (textSplitter) {
-            docs = await loader.loadAndSplit(textSplitter)
+            docs = await loader.load()
+            docs = await textSplitter.splitDocuments(docs)
         } else {
             docs = await loader.load()
         }
@@ -162,24 +191,42 @@ class Airtable_DocumentLoaders implements INode {
             const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata,
-                        ...parsedMetadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {
+                              ...parsedMetadata
+                          }
+                        : omit(
+                              {
+                                  ...doc.metadata,
+                                  ...parsedMetadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
         } else {
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {}
+                        : omit(
+                              {
+                                  ...doc.metadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
+        }
+
+        const output = nodeData.outputs?.output as string
+
+        if (output === 'text') {
+            let finalText = ''
+            for (const doc of docs) {
+                finalText += `${doc.pageContent}\n`
+            }
+            return handleEscapeCharacters(finalText, false)
         }
 
         return docs
@@ -194,6 +241,7 @@ interface AirtableLoaderParams {
     fields?: string[]
     limit?: number
     returnAll?: boolean
+    filterByFormula?: string
 }
 
 interface AirtableLoaderRequest {
@@ -201,6 +249,7 @@ interface AirtableLoaderRequest {
     view: string | undefined
     fields?: string[]
     offset?: string
+    filterByFormula?: string
 }
 
 interface AirtableLoaderResponse {
@@ -229,7 +278,18 @@ class AirtableLoader extends BaseDocumentLoader {
 
     public readonly returnAll: boolean
 
-    constructor({ baseId, tableId, viewId, fields = [], accessToken, limit = 100, returnAll = false }: AirtableLoaderParams) {
+    public readonly filterByFormula?: string
+
+    constructor({
+        baseId,
+        tableId,
+        viewId,
+        fields = [],
+        accessToken,
+        limit = 100,
+        returnAll = false,
+        filterByFormula
+    }: AirtableLoaderParams) {
         super()
         this.baseId = baseId
         this.tableId = tableId
@@ -238,6 +298,7 @@ class AirtableLoader extends BaseDocumentLoader {
         this.accessToken = accessToken
         this.limit = limit
         this.returnAll = returnAll
+        this.filterByFormula = filterByFormula
     }
 
     public async load(): Promise<IDocument[]> {
@@ -288,6 +349,10 @@ class AirtableLoader extends BaseDocumentLoader {
             data.fields = this.fields
         }
 
+        if (this.filterByFormula) {
+            data.filterByFormula = this.filterByFormula
+        }
+
         let response: AirtableLoaderResponse
         let returnPages: AirtableLoaderPage[] = []
 
@@ -316,6 +381,10 @@ class AirtableLoader extends BaseDocumentLoader {
 
         if (this.fields.length > 0) {
             data.fields = this.fields
+        }
+
+        if (this.filterByFormula) {
+            data.filterByFormula = this.filterByFormula
         }
 
         let response: AirtableLoaderResponse

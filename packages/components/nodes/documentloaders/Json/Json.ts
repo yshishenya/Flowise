@@ -59,7 +59,7 @@ class Json_DocumentLoaders implements INode {
                 type: 'string',
                 rows: 4,
                 description:
-                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma',
+                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma. Use * to omit all metadata keys execept the ones you specify in the Additional Metadata field',
                 placeholder: 'key1, key2, key3.nestedKey1',
                 optional: true,
                 additionalParams: true
@@ -99,12 +99,15 @@ class Json_DocumentLoaders implements INode {
             const chatflowid = options.chatflowid
 
             for (const file of files) {
+                if (!file) continue
                 const fileData = await getFileFromStorage(file, chatflowid)
                 const blob = new Blob([fileData])
                 const loader = new JSONLoader(blob, pointers.length != 0 ? pointers : undefined)
 
                 if (textSplitter) {
-                    docs.push(...(await loader.loadAndSplit(textSplitter)))
+                    let splittedDocs = await loader.load()
+                    splittedDocs = await textSplitter.splitDocuments(splittedDocs)
+                    docs.push(...splittedDocs)
                 } else {
                     docs.push(...(await loader.load()))
                 }
@@ -117,6 +120,7 @@ class Json_DocumentLoaders implements INode {
             }
 
             for (const file of files) {
+                if (!file) continue
                 const splitDataURI = file.split(',')
                 splitDataURI.pop()
                 const bf = Buffer.from(splitDataURI.pop() || '', 'base64')
@@ -124,7 +128,9 @@ class Json_DocumentLoaders implements INode {
                 const loader = new JSONLoader(blob, pointers.length != 0 ? pointers : undefined)
 
                 if (textSplitter) {
-                    docs.push(...(await loader.loadAndSplit(textSplitter)))
+                    let splittedDocs = await loader.load()
+                    splittedDocs = await textSplitter.splitDocuments(splittedDocs)
+                    docs.push(...splittedDocs)
                 } else {
                     docs.push(...(await loader.load()))
                 }
@@ -135,23 +141,31 @@ class Json_DocumentLoaders implements INode {
             const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata,
-                        ...parsedMetadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {
+                              ...parsedMetadata
+                          }
+                        : omit(
+                              {
+                                  ...doc.metadata,
+                                  ...parsedMetadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
         } else {
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {}
+                        : omit(
+                              {
+                                  ...doc.metadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
         }
 

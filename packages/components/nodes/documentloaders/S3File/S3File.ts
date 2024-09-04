@@ -1,13 +1,13 @@
 import { omit } from 'lodash'
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
-import { S3Loader } from 'langchain/document_loaders/web/s3'
+import { S3Loader } from '@langchain/community/document_loaders/web/s3'
 import {
     UnstructuredLoader,
     UnstructuredLoaderOptions,
     UnstructuredLoaderStrategy,
     SkipInferTableTypes,
     HiResModelName
-} from 'langchain/document_loaders/fs/unstructured'
+} from '@langchain/community/document_loaders/fs/unstructured'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
 import { S3Client, GetObjectCommand, S3ClientConfig } from '@aws-sdk/client-s3'
 import { getRegions, MODEL_TYPE } from '../../../src/modelLoader'
@@ -427,7 +427,7 @@ class S3_DocumentLoaders implements INode {
                 type: 'string',
                 rows: 4,
                 description:
-                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma',
+                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma. Use * to omit all metadata keys execept the ones you specify in the Additional Metadata field',
                 placeholder: 'key1, key2, key3.nestedKey1',
                 optional: true,
                 additionalParams: true
@@ -561,25 +561,33 @@ class S3_DocumentLoaders implements INode {
                     const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
                     docs = docs.map((doc) => ({
                         ...doc,
-                        metadata: omit(
-                            {
-                                ...doc.metadata,
-                                ...parsedMetadata,
-                                [sourceIdKey]: doc.metadata[sourceIdKey] || sourceIdKey
-                            },
-                            omitMetadataKeys
-                        )
+                        metadata:
+                            _omitMetadataKeys === '*'
+                                ? {
+                                      ...parsedMetadata
+                                  }
+                                : omit(
+                                      {
+                                          ...doc.metadata,
+                                          ...parsedMetadata,
+                                          [sourceIdKey]: doc.metadata[sourceIdKey] || sourceIdKey
+                                      },
+                                      omitMetadataKeys
+                                  )
                     }))
                 } else {
                     docs = docs.map((doc) => ({
                         ...doc,
-                        metadata: omit(
-                            {
-                                ...doc.metadata,
-                                [sourceIdKey]: doc.metadata[sourceIdKey] || sourceIdKey
-                            },
-                            omitMetadataKeys
-                        )
+                        metadata:
+                            _omitMetadataKeys === '*'
+                                ? {}
+                                : omit(
+                                      {
+                                          ...doc.metadata,
+                                          [sourceIdKey]: doc.metadata[sourceIdKey] || sourceIdKey
+                                      },
+                                      omitMetadataKeys
+                                  )
                     }))
                 }
 

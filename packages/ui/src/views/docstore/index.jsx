@@ -34,7 +34,7 @@ import useApi from '@/hooks/useApi'
 import documentsApi from '@/api/documentstore'
 
 // icons
-import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons'
+import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons-react'
 import doc_store_empty from '@/assets/images/doc_store_empty.svg'
 
 // const
@@ -327,7 +327,7 @@ const Documents = () => {
                         <Stack sx={{ alignItems: 'center', justifyContent: 'center' }} flexDirection='column'>
                             <Box sx={{ p: 2, height: 'auto' }}>
                                 <img
-                                    style={{ objectFit: 'cover', height: '16vh', width: 'auto' }}
+                                    style={{ objectFit: 'cover', height: '20vh', width: 'auto' }}
                                     src={doc_store_empty}
                                     alt='doc_store_empty'
                                 />

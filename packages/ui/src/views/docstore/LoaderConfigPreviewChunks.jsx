@@ -11,7 +11,7 @@ import useApi from '@/hooks/useApi'
 // Material-UI
 import { Skeleton, Toolbar, Box, Button, Card, CardContent, Grid, OutlinedInput, Stack, Typography } from '@mui/material'
 import { useTheme, styled } from '@mui/material/styles'
-import { IconScissors, IconArrowLeft, IconDatabaseImport, IconBook, IconX, IconEye } from '@tabler/icons'
+import { IconScissors, IconArrowLeft, IconDatabaseImport, IconBook, IconX, IconEye } from '@tabler/icons-react'
 
 // Project import
 import MainCard from '@/ui-component/cards/MainCard'
@@ -120,9 +120,14 @@ const LoaderConfigPreviewChunks = () => {
         let canSubmit = true
         const inputParams = (selectedDocumentLoader.inputParams ?? []).filter((inputParam) => !inputParam.hidden)
         for (const inputParam of inputParams) {
-            if (!inputParam.optional && !selectedDocumentLoader.inputs[inputParam.name]) {
-                canSubmit = false
-                break
+            if (!inputParam.optional && (!selectedDocumentLoader.inputs[inputParam.name] || !selectedDocumentLoader.credential)) {
+                if (inputParam.type === 'credential' && !selectedDocumentLoader.credential) {
+                    canSubmit = false
+                    break
+                } else if (inputParam.type !== 'credential' && !selectedDocumentLoader.inputs[inputParam.name]) {
+                    canSubmit = false
+                    break
+                }
             }
         }
         if (!canSubmit) {
@@ -274,7 +279,6 @@ const LoaderConfigPreviewChunks = () => {
     useEffect(() => {
         if (getNodeDetailsApi.data) {
             const nodeData = cloneDeep(initNode(getNodeDetailsApi.data, uuidv4()))
-
             // If this is a document store edit config, set the existing input values
             if (existingLoaderFromDocStoreTable && existingLoaderFromDocStoreTable.loaderConfig) {
                 nodeData.inputs = existingLoaderFromDocStoreTable.loaderConfig

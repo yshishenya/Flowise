@@ -1,7 +1,7 @@
 import { omit } from 'lodash'
 import { ICommonObject, IDocument, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { TextSplitter } from 'langchain/text_splitter'
-import { Browser, Page, PuppeteerWebBaseLoader, PuppeteerWebBaseLoaderOptions } from 'langchain/document_loaders/web/puppeteer'
+import { Browser, Page, PuppeteerWebBaseLoader, PuppeteerWebBaseLoaderOptions } from '@langchain/community/document_loaders/web/puppeteer'
 import { test } from 'linkifyjs'
 import { webCrawl, xmlScrape } from '../../../src'
 import { PuppeteerLifeCycleEvent } from 'puppeteer'
@@ -122,7 +122,7 @@ class Puppeteer_DocumentLoaders implements INode {
                 type: 'string',
                 rows: 4,
                 description:
-                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma',
+                    'Each document loader comes with a default set of metadata keys that are extracted from the document. You can use this field to omit some of the default metadata keys. The value should be a list of keys, seperated by comma. Use * to omit all metadata keys execept the ones you specify in the Additional Metadata field',
                 placeholder: 'key1, key2, key3.nestedKey1',
                 optional: true,
                 additionalParams: true
@@ -175,7 +175,8 @@ class Puppeteer_DocumentLoaders implements INode {
                 }
                 const loader = new PuppeteerWebBaseLoader(url, config)
                 if (textSplitter) {
-                    docs = await loader.loadAndSplit(textSplitter)
+                    docs = await loader.load()
+                    docs = await textSplitter.splitDocuments(docs)
                 } else {
                     docs = await loader.load()
                 }
@@ -218,23 +219,31 @@ class Puppeteer_DocumentLoaders implements INode {
             const parsedMetadata = typeof metadata === 'object' ? metadata : JSON.parse(metadata)
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata,
-                        ...parsedMetadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {
+                              ...parsedMetadata
+                          }
+                        : omit(
+                              {
+                                  ...doc.metadata,
+                                  ...parsedMetadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
         } else {
             docs = docs.map((doc) => ({
                 ...doc,
-                metadata: omit(
-                    {
-                        ...doc.metadata
-                    },
-                    omitMetadataKeys
-                )
+                metadata:
+                    _omitMetadataKeys === '*'
+                        ? {}
+                        : omit(
+                              {
+                                  ...doc.metadata
+                              },
+                              omitMetadataKeys
+                          )
             }))
         }
 

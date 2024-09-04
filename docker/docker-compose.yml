@@ -33,5 +33,4 @@ services:
             - '${PORT}:${PORT}'
         volumes:
             - ~/.flowise:/root/.flowise
-            - ../packages/server/src:/usr/src/packages # Относительный путь к исходному коду
-        command: /bin/sh -c "sleep 3; flowise start"
+        entrypoint: /bin/sh -c "sleep 3; flowise start"

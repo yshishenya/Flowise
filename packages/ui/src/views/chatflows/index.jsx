@@ -27,7 +27,7 @@ import useApi from '@/hooks/useApi'
 import { baseURL } from '@/store/constant'
 
 // icons
-import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons'
+import { IconPlus, IconLayoutGrid, IconList } from '@tabler/icons-react'
 
 // ==============================|| CHATFLOWS ||============================== //
 
@@ -197,7 +197,7 @@ const Chatflows = () => {
                         <Stack sx={{ alignItems: 'center', justifyContent: 'center' }} flexDirection='column'>
                             <Box sx={{ p: 2, height: 'auto' }}>
                                 <img
-                                    style={{ objectFit: 'cover', height: '16vh', width: 'auto' }}
+                                    style={{ objectFit: 'cover', height: '25vh', width: 'auto' }}
                                     src={WorkflowEmptySVG}
                                     alt='WorkflowEmptySVG'
                                 />

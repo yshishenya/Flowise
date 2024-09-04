@@ -20,6 +20,7 @@ import { sanitizeMiddleware, getCorsOptions, getAllowedIframeOrigins } from './u
 import { Telemetry } from './utils/telemetry'
 import flowiseApiV1Router from './routes'
 import errorHandlerMiddleware from './middlewares/errors'
+import { validateAPIKey } from './utils/validateKey'
 
 declare global {
     namespace Express {
@@ -43,40 +44,39 @@ export class App {
 
     async initDatabase() {
         // Initialize database
-        this.AppDataSource.initialize()
-            .then(async () => {
-                logger.info('📦 [server]: Data Source is initializing...')
+        try {
+            await this.AppDataSource.initialize()
+            logger.info('📦 [server]: Data Source is initializing...')
 
-                // Run Migrations Scripts
-                await this.AppDataSource.runMigrations({ transaction: 'each' })
+            // Run Migrations Scripts
+            await this.AppDataSource.runMigrations({ transaction: 'each' })
 
-                // Initialize nodes pool
-                this.nodesPool = new NodesPool()
-                await this.nodesPool.initialize()
+            // Initialize nodes pool
+            this.nodesPool = new NodesPool()
+            await this.nodesPool.initialize()
 
-                // Initialize chatflow pool
-                this.chatflowPool = new ChatflowPool()
+            // Initialize chatflow pool
+            this.chatflowPool = new ChatflowPool()
 
-                // Initialize API keys
-                await getAPIKeys()
+            // Initialize API keys
+            await getAPIKeys()
 
-                // Initialize encryption key
-                await getEncryptionKey()
+            // Initialize encryption key
+            await getEncryptionKey()
 
-                // Initialize Rate Limit
-                const AllChatFlow: IChatFlow[] = await getAllChatFlow()
-                await initializeRateLimiter(AllChatFlow)
+            // Initialize Rate Limit
+            const AllChatFlow: IChatFlow[] = await getAllChatFlow()
+            await initializeRateLimiter(AllChatFlow)
 
-                // Initialize cache pool
-                this.cachePool = new CachePool()
+            // Initialize cache pool
+            this.cachePool = new CachePool()
 
-                // Initialize telemetry
-                this.telemetry = new Telemetry()
-                logger.info('📦 [server]: Data Source has been initialized!')
-            })
-            .catch((err) => {
-                logger.error('❌ [server]: Error during Data Source initialization:', err)
-            })
+            // Initialize telemetry
+            this.telemetry = new Telemetry()
+            logger.info('📦 [server]: Data Source has been initialized!')
+        } catch (error) {
+            logger.error('❌ [server]: Error during Data Source initialization:', error)
+        }
     }
 
     async config(socketIO?: Server) {
@@ -117,33 +117,85 @@ export class App {
             next()
         })
 
+        const whitelistURLs = [
+            '/api/v1/verify/apikey/',
+            '/api/v1/chatflows/apikey/',
+            '/api/v1/public-chatflows',
+            '/api/v1/public-chatbotConfig',
+            '/api/v1/prediction/',
+            '/api/v1/vector/upsert/',
+            '/api/v1/node-icon/',
+            '/api/v1/components-credentials-icon/',
+            '/api/v1/chatflows-streaming',
+            '/api/v1/chatflows-uploads',
+            '/api/v1/openai-assistants-file/download',
+            '/api/v1/feedback',
+            '/api/v1/leads',
+            '/api/v1/get-upload-file',
+            '/api/v1/ip',
+            '/api/v1/ping'
+        ]
+        const URL_CASE_INSENSITIVE_REGEX: RegExp = /\/api\/v1\//i
+        const URL_CASE_SENSITIVE_REGEX: RegExp = /\/api\/v1\//
+
         if (process.env.FLOWISE_USERNAME && process.env.FLOWISE_PASSWORD) {
             const username = process.env.FLOWISE_USERNAME
             const password = process.env.FLOWISE_PASSWORD
             const basicAuthMiddleware = basicAuth({
                 users: { [username]: password }
             })
-            const whitelistURLs = [
-                '/api/v1/verify/apikey/',
-                '/api/v1/chatflows/apikey/',
-                '/api/v1/public-chatflows',
-                '/api/v1/public-chatbotConfig',
-                '/api/v1/prediction/',
-                '/api/v1/vector/upsert/',
-                '/api/v1/node-icon/',
-                '/api/v1/components-credentials-icon/',
-                '/api/v1/chatflows-streaming',
-                '/api/v1/chatflows-uploads',
-                '/api/v1/openai-assistants-file/download',
-                '/api/v1/feedback',
-                '/api/v1/leads',
-                '/api/v1/get-upload-file',
-                '/api/v1/ip'
-            ]
-            this.app.use((req, res, next) => {
-                if (req.url.includes('/api/v1/')) {
-                    whitelistURLs.some((url) => req.url.includes(url)) ? next() : basicAuthMiddleware(req, res, next)
-                } else next()
+            this.app.use(async (req, res, next) => {
+                // Step 1: Check if the req path contains /api/v1 regardless of case
+                if (URL_CASE_INSENSITIVE_REGEX.test(req.path)) {
+                    // Step 2: Check if the req path is case sensitive
+                    if (URL_CASE_SENSITIVE_REGEX.test(req.path)) {
+                        // Step 3: Check if the req path is in the whitelist
+                        const isWhitelisted = whitelistURLs.some((url) => req.path.startsWith(url))
+                        if (isWhitelisted) {
+                            next()
+                        } else if (req.headers['x-request-from'] === 'internal') {
+                            basicAuthMiddleware(req, res, next)
+                        } else {
+                            const isKeyValidated = await validateAPIKey(req)
+                            if (!isKeyValidated) {
+                                return res.status(401).json({ error: 'Unauthorized Access' })
+                            }
+                            next()
+                        }
+                    } else {
+                        return res.status(401).json({ error: 'Unauthorized Access' })
+                    }
+                } else {
+                    // If the req path does not contain /api/v1, then allow the request to pass through, example: /assets, /canvas
+                    next()
+                }
+            })
+        } else {
+            this.app.use(async (req, res, next) => {
+                // Step 1: Check if the req path contains /api/v1 regardless of case
+                if (URL_CASE_INSENSITIVE_REGEX.test(req.path)) {
+                    // Step 2: Check if the req path is case sensitive
+                    if (URL_CASE_SENSITIVE_REGEX.test(req.path)) {
+                        // Step 3: Check if the req path is in the whitelist
+                        const isWhitelisted = whitelistURLs.some((url) => req.path.startsWith(url))
+                        if (isWhitelisted) {
+                            next()
+                        } else if (req.headers['x-request-from'] === 'internal') {
+                            next()
+                        } else {
+                            const isKeyValidated = await validateAPIKey(req)
+                            if (!isKeyValidated) {
+                                return res.status(401).json({ error: 'Unauthorized Access' })
+                            }
+                            next()
+                        }
+                    } else {
+                        return res.status(401).json({ error: 'Unauthorized Access' })
+                    }
+                } else {
+                    // If the req path does not contain /api/v1, then allow the request to pass through, example: /assets, /canvas
+                    next()
+                }
             })
         }
 
@@ -198,6 +250,7 @@ export async function getAllChatFlow(): Promise<IChatFlow[]> {
 export async function start(): Promise<void> {
     serverApp = new App()
 
+    const host = process.env.HOST
     const port = parseInt(process.env.PORT || '', 10) || 3000
     const server = http.createServer(serverApp.app)
 
@@ -208,8 +261,8 @@ export async function start(): Promise<void> {
     await serverApp.initDatabase()
     await serverApp.config(io)
 
-    server.listen(port, () => {
-        logger.info(`⚡️ [server]: Flowise Server is listening at ${port}`)
+    server.listen(port, host, () => {
+        logger.info(`⚡️ [server]: Flowise Server is listening at ${host ? 'http://' + host : ''}:${port}`)
     })
 }
 
